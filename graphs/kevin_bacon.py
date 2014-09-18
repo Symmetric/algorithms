@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """
 Bacon index calculator, using the IMDB movie graph.
 
