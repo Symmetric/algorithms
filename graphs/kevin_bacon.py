@@ -6,17 +6,16 @@ Usage:
     kevin_bacon.py <actor_name>
 """
 import logging
-from logging import basicConfig
 import re
 from docopt import docopt
 from graphs.primitives import Graph
 
 ACTOR_FILE = 'actors.list'
+BACON = 'Bacon, Kevin (I)'
 ACTOR_RE = re.compile('([^\t]+)\t+([^\t]+)')
 TITLE_RE = re.compile('([\w .,"&!?\']+) (\(\d+\))')
 
 _log = logging.getLogger(__name__)
-basicConfig(level=logging.INFO)
 
 
 def _seek_to_actors(file):
@@ -126,6 +125,20 @@ def _create_actor_graph(actor_titles):
     return graph
 
 
+def _find_hops_to_kevin(actor_titles, target_actor):
+    graph = _create_actor_graph(actor_titles)
+    _log.debug('Build graph %s', graph)
+    kevin_node = graph.get_node_by_label(BACON)
+    target_node = graph.get_node_by_label(target_actor)
+
+    found, explored = graph.breadth_first_search(kevin_node, target_node)
+
+    last_explored = explored[len(explored) - 1]
+    _log.debug('Last explored: %s', last_explored)
+    _, hops = last_explored
+    return hops
+
+
 def main():
     arguments = docopt(__doc__, version='0.1.0')
     target_actor = arguments['<actor_name>']
@@ -139,11 +152,9 @@ def main():
             actor_titles[actor] = titles
             actor, titles = _read_next_actor(actor_file)
 
-    if target_actor not in actor_titles:
-        print('Actor not found in list.')
-    else:
-        graph = _create_actor_graph(actor_titles)
-        graph.open_shortest_path('Kevin Bacon', target_actor)
+    hops = _find_hops_to_kevin(actor_titles, target_actor)
+
+    print('Found path in %s hops.' % hops)
 
 
 class BaconException(Exception):

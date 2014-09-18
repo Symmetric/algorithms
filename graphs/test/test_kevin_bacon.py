@@ -1,6 +1,12 @@
+import logging
+from copy import deepcopy
 from unittest.case import TestCase
-from unittest.mock import patch, MagicMock
-from graphs.kevin_bacon import _seek_to_actors, _read_next_actor, BaconException, _create_actor_graph
+from unittest.mock import MagicMock
+from graphs.kevin_bacon import _seek_to_actors, _read_next_actor, BaconException, _create_actor_graph, \
+    _find_hops_to_kevin
+
+_log = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG)
 
 ACTOR_SAMPLE = """Aanaahad\t\tAkki, Vikki te Nikki (2014)  [Kuldeep]
 \t\tLahore (2010)  [Veerender Singh]  <3>
@@ -121,3 +127,11 @@ class TestKevinBacon(TestCase):
         self.assertTrue(bob in alice_partners)
         self.assertTrue(claire in alice_partners)
         self.assertTrue(dan not in alice_partners)
+
+    def test_find_hops_to_kevin(self):
+        """Test that _find_hops_to_kevin correctly counts the number of hops."""
+        actors_dict = deepcopy(LINKED_ACTORS_DICT)
+        actors_dict['Bacon, Kevin (I)'] = ["Film 1"]
+        hops = _find_hops_to_kevin(actors_dict, "Dan")
+
+        self.assertEquals(hops, 2)
