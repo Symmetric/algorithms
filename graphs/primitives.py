@@ -187,11 +187,37 @@ class Graph:
                 if other_node not in explored:
                     frontier.append(other_node)
                     explored[other_node] = True
+                    # By definition, all other_nodes are one layer deeper than the current node.
                     node_layer[other_node] = node_layer[node] + 1
+                    # Keep a reference to the node that discovered the other_node
+                    edge_to_parent[other_node] = edge
                     _log.debug('Marked other node explored, layer=%s', node_layer[other_node])
                     # Else other node was explored already, so ignore it.
 
-        return found, explored_list
+        return found, explored_list, edge_to_parent
+
+    def bfs_path(self, start_node, end_node):
+        """
+        Get the path from start_node to end_node, as calculated by the BFS algorithm.
+
+        Note that this will evaluate the path with the lowest number of hops, not the shortest distance.
+
+        :param start_node: The node to start the search on.
+        :param end_node: The node to find a path to.
+        :return path: A list containing the path from the start_node to the end_node.
+        """
+        _, _, edge_to_parent = self.breadth_first_search(start_node, end_node)
+
+        node = end_node
+        edge = edge_to_parent[node]
+        path = []
+
+        while edge:
+            path.append(edge)
+            node = edge.get_other_node(node) if edge else None
+            edge = edge_to_parent[node]
+
+        return path[::-1]
 
     def bfs_connected_regions(self):
         """Use the BFS algorithm to determine the connected regions of an undirected graph."""

@@ -22,6 +22,25 @@ class GraphTestCase(unittest.TestCase):
         self.edge_b_c = self.graph.add_edge_by_label('b', 'c', directed=directed)
         self.edge_c_a = self.graph.add_edge_by_label('c', 'a', directed=directed)
 
+    def _setup_fork_graph(self):
+        """
+        Set up a graph with a fork.
+
+        a --- b --- d --- e
+        L---- c ------ ---+
+
+        :return: None
+        """
+        self._setup_basic_graph()
+        self.node_c = self.graph.add_node_by_label('c')
+        self.node_d = self.graph.add_node_by_label('d')
+        self.node_e = self.graph.add_node_by_label('e')
+
+        self.edge_a_c = self.graph.add_edge_by_label('a', 'c')
+        self.edge_b_d = self.graph.add_edge_by_label('b', 'd')
+        self.edge_d_e = self.graph.add_edge_by_label('d', 'e')
+        self.edge_c_e = self.graph.add_edge_by_label('c', 'e')
+
 
 class TestGraph(GraphTestCase):
     def test_simple(self):
@@ -76,7 +95,7 @@ class TestGraph(GraphTestCase):
         self._setup_triangle_graph()
         self.node_d = self.graph.add_node_by_label('d')  # Unconnected node
 
-        found, explored = self.graph.breadth_first_search(self.node_a, self.node_c)
+        found, explored, _ = self.graph.breadth_first_search(self.node_a, self.node_c)
 
         _log.info('Found? %s. Explored: %s', found, explored)
         self.assertTrue(found)
@@ -87,7 +106,7 @@ class TestGraph(GraphTestCase):
         self._setup_triangle_graph()
         self.node_d = self.graph.add_node_by_label('d')  # Unconnected node
 
-        found, explored = self.graph.breadth_first_search(self.node_a, self.node_d)
+        found, explored, _ = self.graph.breadth_first_search(self.node_a, self.node_d)
 
         _log.info('Found? %s. Explored: %s', found, explored)
         self.assertFalse(found)
@@ -104,14 +123,9 @@ class TestGraph(GraphTestCase):
         I.e. 3 layers.
 
         """
-        self._setup_basic_graph()
-        self.node_c = self.graph.add_node_by_label('c')
-        self.node_d = self.graph.add_node_by_label('d')
+        self._setup_fork_graph()
 
-        self.edge_a_c = self.graph.add_edge_by_label('a', 'c')
-        self.edge_b_d = self.graph.add_edge_by_label('b', 'd')
-
-        found, explored = self.graph.breadth_first_search(self.node_a, self.node_d)
+        found, explored, _ = self.graph.breadth_first_search(self.node_a, self.node_d)
 
         self.assertTrue(found)
         self.assertEquals(
@@ -123,6 +137,16 @@ class TestGraph(GraphTestCase):
                 (self.node_d, 2),
             ]
         )
+
+    def test_bfs_paths(self):
+        """Test that BFS correctly records the optimal path to each node."""
+        self._setup_fork_graph()
+
+        self.assertEquals(self.graph.bfs_path(self.node_a, self.node_a), [])
+        self.assertEquals(self.graph.bfs_path(self.node_a, self.node_b), [self.edge_a_b])
+        self.assertEquals(self.graph.bfs_path(self.node_a, self.node_c), [self.edge_a_c])
+        self.assertEquals(self.graph.bfs_path(self.node_a, self.node_d), [self.edge_a_b, self.edge_b_d])
+        self.assertEquals(self.graph.bfs_path(self.node_a, self.node_e), [self.edge_a_c, self.edge_c_e])
 
     def test_bfs_connected_regions(self):
         """Test that the BFS connected regions algorithm correctly counts regions."""
