@@ -5,53 +5,57 @@ Bacon index calculator, using the IMDB movie graph.
 Usage:
     kevin_bacon.py <actor_name>
 """
+from _pickle import Unpickler, Pickler
 import logging
+import pickle
+from os.path import exists
+import os
+from progressbar.progressbar import ProgressBar
 import re
 from docopt import docopt
-from graphs.primitives import Graph
+from graphs.primitives import Graph, GraphException
 
+PICKLE_FILE = 'pickle'
+SEEKING_START = 0
+SEEKING_HEADERS = 1
+SEEKING_SEPARATOR = 2
 ACTOR_FILE = 'actors.list'
 BACON = 'Bacon, Kevin (I)'
 ACTOR_RE = re.compile('([^\t]+)\t+([^\t]+)')
-TITLE_RE = re.compile('([\w .,"&!?\']+) (\(\d+\))')
+# TITLE_RE = re.compile('([\w .,-:"&!?\'\(\)]+) \((\d+)(:?/\w+)?\).*')
+TITLE_RE = re.compile('(.*) \((?:(?:(\d+))|(\?\?\?\?))(?:/\w+)?\).*')
 
 _log = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 
-def _seek_to_actors(file):
+def _seek_to_actors(line, seeking):
     """Given a file object, advance the read pointer to the first actual actor in the list."""
-    seeking = True
-    while seeking:
-        line = file.readline()
-        _log.debug('Read "%s"', line)
-        if line == "THE ACTORS LIST\n":
-            seeking = False
-
-    file.readline()  # Underline
-    file.readline()  # Blank line
-    headers = file.readline()
-    _log.debug('Read line "%s"', headers)
-    assert re.match('Name\t+Titles', headers)
-    file.readline()  # Underline
-    _log.debug('Finished seeking.')
+    _log.debug('Read line "%s"', line)
+    if seeking == SEEKING_START and re.match('Name\t+Titles', line):
+        return SEEKING_HEADERS
+    elif seeking == SEEKING_HEADERS and re.match('[-]+\s+[-]+'):
+        return SEEKING_SEPARATOR
+    else:
+        return SEEKING_START
 
 
-def _read_next_actor(file):
-    """Read and return the next actor from the file.
+# def _read_next_actor(file):
+#     """Read and return the next actor from the file.
+#
+#     Assumes that actors are delimited by a blank line.
+#     """
+#     actor_lines = [file.readline()]
+#     next_line = file.readline()
+#
+#     while next_line != '\n':
+#         actor_lines.append(next_line)
+#         next_line = file.readline()
+#
+#     return _format_actor_lines(actor_lines)
 
-    Assumes that actors are delimited by a blank line.
-    """
-    actor_lines = [file.readline()]
-    next_line = file.readline()
 
-    while next_line != '\n':
-        actor_lines.append(next_line)
-        next_line = file.readline()
-
-    return _format_actor_lines(actor_lines)
-
-
-def _format_actor_lines(lines):
+def _format_actor_entry(entry):
     """Parse the text of an Actor entry.
 
     Expects the following input format:
@@ -79,11 +83,12 @@ def _format_actor_lines(lines):
                      variety/comedy specials released on video, or
                      self-help/physical fitness videos)
     """
+    lines = entry.split('\n')
     actor_line = lines.pop(0)
     _log.debug('Parsing actor line %s', actor_line)
     match = ACTOR_RE.match(actor_line)
     if match is None:
-        raise BaconException('Failed to match actor on line: %s' %actor_line)
+        raise BaconException('Failed to match actor on line: %s' % actor_line)
     actor, first_role = match.groups()
 
     _log.debug('Got actor, first_role = %s, %s', actor, first_role)
@@ -104,8 +109,10 @@ def _create_actor_graph(actor_titles):
     graph = Graph()
     films_to_actors = {}
 
-    for actor, titles in actor_titles.items():
-        _log.debug('Processing actor "%s"', actor)
+    print('Creating actor graph...')
+    progress = ProgressBar()
+    for actor, titles in progress(actor_titles.items()):
+        _log.info('Processing actor "%s"', actor)
         # First add a node for the actor
         graph.add_node_by_label(actor)
 
@@ -131,7 +138,7 @@ def _find_hops_to_kevin(actor_titles, target_actor):
     kevin_node = graph.get_node_by_label(BACON)
     target_node = graph.get_node_by_label(target_actor)
 
-    found, explored = graph.breadth_first_search(kevin_node, target_node)
+    found, explored, _ = graph.breadth_first_search(kevin_node, target_node)
 
     last_explored = explored[len(explored) - 1]
     _log.debug('Last explored: %s', last_explored)
@@ -139,27 +146,76 @@ def _find_hops_to_kevin(actor_titles, target_actor):
     return hops
 
 
+def _print_path_to_kevin(actor_titles, target_actor):
+    """
+    Format and print the path to Kevin Bacon.
+
+    :param graph: A Graph containing actor Nodes and film Edges.
+    :param path: A list of Edges in the Graph from the Kevin node to the target node.
+    :return: None
+    """
+    graph, path = _find_path_to_kevin(actor_titles, target_actor)
+    kevin = graph.get_node_by_label(BACON)
+    source = kevin
+    for edge in path:
+        destination = edge.get_other_node(source)
+        print('%s was in %s with %s' % (source.label, edge.label, destination.label))
+        # Update source for next iteration
+        source = destination
+
+
+def _find_path_to_kevin(actor_titles, target_actor):
+    graph = _create_actor_graph(actor_titles)
+    _log.debug('Build graph %s', graph)
+    kevin_node = graph.get_node_by_label(BACON)
+    target_node = graph.get_node_by_label(target_actor)
+
+    path = graph.bfs_path(kevin_node, target_node)
+
+    _log.debug('Got path: %s', path)
+
+    return graph, path
+
+
 def main():
     arguments = docopt(__doc__, version='0.1.0')
     target_actor = arguments['<actor_name>']
 
-    with open(ACTOR_FILE, 'r', encoding='latin1') as actor_file:
-        actor_titles = {}
-        _seek_to_actors(actor_file)
-        actor, titles = _read_next_actor(actor_file)
+    pickle_data = None
 
-        while actor:
-            actor_titles[actor] = titles
-            actor, titles = _read_next_actor(actor_file)
+    if exists(PICKLE_FILE):
+        with open(PICKLE_FILE) as pickle_file:
+            pickle_data = Unpickler(pickle_file).load()
 
-    hops = _find_hops_to_kevin(actor_titles, target_actor)
+    try:
+        if not pickle_data:
+            print('No pickle found.')
+            with open(ACTOR_FILE, 'r', encoding='latin1') as actor_file:
+                actor_titles = {}
 
-    print('Found path in %s hops.' % hops)
+                print('Loading input file...')
+                actor_lines = actor_file.read().strip().split('\n\n')
+                actor_last_lines = actor_lines[-10:]
+
+                print('Parsing input file...')
+                progress = ProgressBar()
+                for actor in progress(actor_lines):
+                    actor, titles = _format_actor_entry(actor)
+                    actor_titles[actor] = titles
+
+                pickle_data = {'actor_titles': actor_titles}
+                print('Saving pickle...')
+                with open(PICKLE_FILE, 'w') as pickle_file:
+                    Pickler(pickle_file).dump()
+        else:
+            print('Pickle found, loading cached data.')
+            actor_titles = pickle_data['actor_titles']
+
+        print('Searching for path from Kevin...')
+        _find_path_to_kevin(actor_titles, target_actor)
+    except BaconException as e:
+        print('\nERROR: %s' % e)
 
 
 class BaconException(Exception):
     pass
-
-
-if __name__ == "__main__":
-    main()

@@ -1,9 +1,9 @@
 import logging
 from copy import deepcopy
 from unittest.case import TestCase
-from unittest.mock import MagicMock
-from graphs.kevin_bacon import _seek_to_actors, _read_next_actor, BaconException, _create_actor_graph, \
-    _find_hops_to_kevin
+from unittest.mock import MagicMock, patch, call
+from graphs.kevin_bacon import _seek_to_actors, BaconException, _create_actor_graph, \
+    _find_hops_to_kevin, _find_path_to_kevin, _print_path_to_kevin, _format_actor_entry
 
 _log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -71,15 +71,14 @@ class TestKevinBacon(TestCase):
 
     def test_read_next_actor(self):
         """Test that _read_next_actor correctly extracts actor data from text blob."""
-        m_file = MagicMock()
-        m_file.readline.side_effect = iter(ACTOR_SAMPLE.splitlines(keepends=True))
+        actor_lines = ACTOR_SAMPLE.split('\n\n')
 
-        actor, titles = _read_next_actor(m_file)
+        actor, titles = _format_actor_entry(actor_lines[0])
 
         self.assertEquals(actor, 'Aanaahad')
         self.assertEquals(titles, ['Akki, Vikki te Nikki', 'Lahore'])
 
-        actor, titles = _read_next_actor(m_file)
+        actor, titles = _format_actor_entry(actor_lines[1])
 
         self.assertEquals(actor, 'Aanderaa, Torgny Gerhard')
         self.assertEquals(
@@ -96,17 +95,15 @@ class TestKevinBacon(TestCase):
         
     def test_read_next_actor_bad_actor(self):
         """Test that _read_next_actor correctly complains on malformatted actor name."""
-        m_file = MagicMock()
-        m_file.readline.side_effect = iter(['ACTOR WITH_NO_TITLE\n', '\n'])
+        actor_lines = 'ACTOR WITH_NO_TITLE'
 
-        self.assertRaises(BaconException, _read_next_actor, m_file)
+        self.assertRaises(BaconException, _format_actor_entry, actor_lines)
 
     def test_read_next_actor_bad_title(self):
         """Test that _read_next_actor correctly complains on malformatted titles."""
-        m_file = MagicMock()
-        m_file.readline.side_effect = iter(['ACTOR\t\tTITLE 1\n', 'TITLE WITH NO DATE', '\n'])
+        actor_lines = 'ACTOR\t\tTITLE 1\nTITLE WITH NO DATE'
 
-        self.assertRaises(BaconException, _read_next_actor, m_file)
+        self.assertRaises(BaconException, _format_actor_entry, actor_lines)
 
     def test_create_actor_graph(self):
         """Test that _create_actor_graph produces the expected Graph object."""
@@ -135,3 +132,23 @@ class TestKevinBacon(TestCase):
         hops = _find_hops_to_kevin(actors_dict, "Dan")
 
         self.assertEquals(hops, 2)
+
+    def test_find_path_to_kevin(self):
+        """Test that _find_path_to_kevin correctly finds the shortest path."""
+        actors_dict = deepcopy(LINKED_ACTORS_DICT)
+        actors_dict['Bacon, Kevin (I)'] = ["Film 1"]
+        graph, path = _find_path_to_kevin(actors_dict, "Dan")
+
+        self.assertEquals([edge.label for edge in path], ["Film 1", "Film 3"])
+
+    @patch('builtins.print')
+    def test_print_path_to_kevin(self, m_print):
+        """Test that _print_path_to_kevin correctly displays the path."""
+        actors_dict = deepcopy(LINKED_ACTORS_DICT)
+        actors_dict['Bacon, Kevin (I)'] = ["Film 1"]
+        _print_path_to_kevin(actors_dict, "Dan")
+
+        self.assertEqual(
+            m_print.mock_calls[-2:],
+            [call('Bacon, Kevin (I) was in Film 1 with Bob'), call('Bob was in Film 3 with Dan')]
+        )

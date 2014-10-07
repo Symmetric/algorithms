@@ -1,6 +1,8 @@
 import itertools
 from collections import deque, defaultdict
 import logging
+import heapq
+from heapq import heappushpop
 
 _log = logging.getLogger(__name__)
 
@@ -112,6 +114,7 @@ class Graph:
         self.nodes.append(node)
 
     def add_node_by_label(self, label):
+        # TODO: perf: avoid O(N) lookup by allowing duplicate Nodes?
         if label in [node.label for node in self.nodes]:
             raise GraphException('Node %s already exists in graph.', label)
         else:
@@ -126,6 +129,7 @@ class Graph:
             raise GraphException('Node %s not found.' % node)
 
     def add_edge_by_label(self, tail_label, head_label, edge_label=None, directed=False):
+        # TODO: perf: creating 2 N-entry lists per add -- try generator? Or loop over existing node list? Remove check?
         for label in [tail_label, head_label]:
             if label not in [node.label for node in self.nodes]:
                 raise GraphException('Node %s does not exist in graph.' % label)
@@ -166,6 +170,8 @@ class Graph:
         # Put the starting node in the frontier list.
         frontier = deque([start])
         explored_list = []
+        # Keep track of parent-child node relationships, to track shortest path.
+        edge_to_parent = {start: None}
 
         # Nodes are marked explored once they are in the frontier
         explored = {start: True}
@@ -206,7 +212,10 @@ class Graph:
         :param end_node: The node to find a path to.
         :return path: A list containing the path from the start_node to the end_node.
         """
-        _, _, edge_to_parent = self.breadth_first_search(start_node, end_node)
+        found, _, edge_to_parent = self.breadth_first_search(start_node, end_node)
+
+        if not found:
+            raise GraphException('A path to %s was not found.' % end_node)
 
         node = end_node
         edge = edge_to_parent[node]
@@ -226,11 +235,40 @@ class Graph:
             # Make a list from the nodes in all regions.
             discovered_nodes = itertools.chain.from_iterable(regions)
             if node not in discovered_nodes:
-                _, new_explored = self.breadth_first_search(node)
+                _, new_explored, _ = self.breadth_first_search(node)
                 regions.append([result[0] for result in new_explored])  # Unpack the explored tuples to get the nodes.
                 _log.info('Found new region %s', regions[-1])
 
         return regions
+
+    def dijkstra_shortest_path(self, start_node, end_node, shortest_path_graph=None):
+        """Use Dijkstra's Shortest Path algorithm to find the path to a node."""
+        if shortest_path_graph is None:
+            shortest_path_graph = self._build_shortest_path_graph(start_node)
+
+    def _build_shortest_path_graph(self, start_node):
+        distance = {}
+        previous_node = {}
+        q = []  # heap
+
+        # Initialize graph with the starting distances.
+        for node in self.nodes:
+            if node != start_node:
+                distance[node] = float('inf')
+                previous_node[node] = None
+            else:
+                # Start node
+                distance[node] = 0
+            heapq.heappush(q, (distance[node], node))
+
+        while q:
+            # Get unexplored node with lowest distance from an explored node
+            _, next_node = heapq.heappop(q)
+
+            for edge, neighbor in ((edge, edge.get_other_node(next_node)) for edge in next_node.outgoing_edges):
+                if distance(next_node) + edge.distance < distance(neighbor):
+                    # Update the neighbor's distance
+                    heappushpop(q, )
 
     def __eq__(self, other):
         if other is None:
